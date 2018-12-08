@@ -96,3 +96,5 @@ DataLoaderBinder.newDataLoaderBinder(binder)
     .bindDataLoader("greeting").toBatchLoader(GreetingBatchLoader.class)
     .bindDataLoader("farewell").toMappedBatchLoader(FarewellBatchLoader.class);
 ```
+
+For a full usage example, see [this test](src/test/java/com/hubspot/dataloader/guice/DataLoaderBinderTest.java)
