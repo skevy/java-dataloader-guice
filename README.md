@@ -59,6 +59,18 @@ public SalutationResolver(
 }
 ```
 
+### With java-dataloader-guice
+
+With java-dataloader-guice, it only takes one line of code to bind each `DataLoader`, for example:
+```java
+DataLoaderBinder.newDataLoaderBinder(binder)
+    .bindDataLoader("greeting").toBatchLoader(GreetingBatchLoader.class)
+    .bindDataLoader("farewell").toBatchLoader(FarewellBatchLoader.class)
+    .bindDataLoader("congratulations").toBatchLoader(CongratulationsBatchLoader.class);
+```
+
+This will create the appropriate `DataLoader` bindings and also add them to a `MapBinder`. This `MapBinder` is used by `DataLoaderModule` to automatically bind a `DataLoaderRegistry` that will always include all your `DataLoader`s. In addition, the `DataLoader`s are bound as singletons and handle the request-scoping internally, which means that they don't need to be wrapped in a `Provider` when injected into graphql-java resolvers.
+
 ## Usage
 
 #### Maven dependency
