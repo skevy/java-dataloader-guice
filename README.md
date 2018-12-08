@@ -2,7 +2,62 @@
 
 ## Overview
 
-This library aims to reduce the friction of using java-dataloader in Guice-based projects, especially when combined with graphql-java.
+This library aims to reduce the friction of using java-dataloader in Guice-based projects, especially when combined with graphql-java. 
+
+### Without java-dataloader-guice
+
+Without java-dataloader-guice, you need to manually bind each `DataLoader` and use all of them to construct a `DataLoaderRegistry`. For example, each `DataLoader` would normally need a separate Guice binding such as:
+
+```java
+@Provides
+@RequestScoped
+@Named("greeting")
+public DataLoader<String, String> provideGreetingDataLoader(GreetingBatchLoader greetingBatchLoader) {
+  return DataLoader.newDataLoader(greetingBatchLoader);
+}
+```
+
+When dealing with lots of such bindings, it is easy to accidentally inject the wrong `BatchLoader`. 
+
+Next, you would then need to inject all of these `DataLoader`s to build the `DataLoaderRegistry`, for example:
+
+```java
+@Provides
+@RequestScoped
+public DataLoaderRegistry provideDataLoaderRegistry(
+    @Named("greeting") DataLoader<String, String> greetingDataLoader,
+    @Named("farewell") DataLoader<String, String> farewellDataLoader,
+    @Named("congratulations") DataLoader<String, String> congratulationsDataLoader
+) {
+  DataLoaderRegistry registry = new DataLoaderRegistry();
+  registry.register("greeting", greetingDataLoader);
+  registry.register("farewell", farewellDataLoader);
+  registry.register("congratulations", congratulationsDataLoader);
+
+  return registry;
+}
+```
+
+Keeping all the generic signatures and names in order is tedious and error-prone. And when adding a new `DataLoader`, it is easy to forget to add it to the registry. 
+
+In addition, when used with graphql-java, resolvers are normally singletons which creates an impedance mismatch with request-scoped `DataLoader` instances. This means carefully injecting `Provider`s where needed to avoid `OutOfScopeException`s, for example:
+
+```java
+private final Provider<DataLoader<String, String>> greetingDataLoader;
+private final Provider<DataLoader<String, String>> farewellDataLoader;
+private final Provider<DataLoader<String, String>> congratulationsDataLoader;
+
+@Inject
+public SalutationResolver(
+    @Named("greeting") Provider<DataLoader<String, String>> greetingDataLoader,
+    @Named("farewell") Provider<DataLoader<String, String>> farewellDataLoader,
+    @Named("congratulations") Provider<DataLoader<String, String>> congratulationsDataLoader
+) {
+  this.greetingDataLoader = greetingDataLoader;
+  this.farewellDataLoader = farewellDataLoader;
+  this.congratulationsDataLoader = congratulationsDataLoader;
+}
+```
 
 ## Usage
 
