@@ -10,7 +10,7 @@
 
   <groupId>com.hubspot.dataloader</groupId>
   <artifactId>java-dataloader-guice</artifactId>
-  <version>0.1</version>
+  <version>0.2-SNAPSHOT</version>
 
   <dependencyManagement>
     <dependencies>
@@ -65,8 +65,4 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
-
-  <scm>
-    <tag>java-dataloader-guice-0.1</tag>
-  </scm>
 </project>
