@@ -4,9 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.dataloader.DataLoader;
 import org.dataloader.DataLoaderRegistry;
+import org.junit.Before;
 import org.junit.Test;
 
 import com.google.inject.Guice;
@@ -18,10 +21,11 @@ import com.google.inject.servlet.ServletModule;
 import com.google.inject.servlet.ServletScopes;
 
 public class DataLoaderBinderTest {
+  private Injector injector;
 
-  @Test
-  public void test() {
-    Injector injector = Guice.createInjector(binder -> {
+  @Before
+  public void setup() {
+    injector = Guice.createInjector(binder -> {
       binder.install(new ServletModule());
       binder.bind(SalutationResolver.class).asEagerSingleton();
 
@@ -29,9 +33,13 @@ public class DataLoaderBinderTest {
       DataLoaderBinder.newDataLoaderBinder(binder)
           .bindDataLoader("greeting").toBatchLoader(GreetingBatchLoader.class)
           .bindDataLoader("farewell").toBatchLoader(FarewellBatchLoader.class)
-          .bindDataLoader("congratulations").toBatchLoader(CongratulationsBatchLoader.class);
+          .bindDataLoader("congratulations").toBatchLoader(CongratulationsBatchLoader.class)
+          .bindDataLoader("random").toBatchLoader(RandomBatchLoader.class);
     });
+  }
 
+  @Test
+  public void test() {
     SalutationResolver resolver = injector.getInstance(SalutationResolver.class);
 
     inRequestScope(() -> {
@@ -44,8 +52,7 @@ public class DataLoaderBinderTest {
       CompletableFuture<String> congratulationsFuture = resolver.congratulate("Travis");
       assertThat(congratulationsFuture.isDone()).isFalse();
 
-      DataLoaderRegistry registry = injector.getInstance(DataLoaderRegistry.class);
-      registry.dispatchAll();
+      dispatch();
 
       assertThat(greetingFuture.isDone()).isTrue();
       assertThat(greetingFuture.getNow(null)).isEqualTo("Hello Bill");
@@ -56,6 +63,101 @@ public class DataLoaderBinderTest {
       assertThat(congratulationsFuture.isDone()).isTrue();
       assertThat(congratulationsFuture.getNow(null)).isEqualTo("Congratulations Travis");
     });
+  }
+
+  @Test
+  public void dispatchingOneRequestDoesntDispatchOthers() {
+    SalutationResolver resolver = injector.getInstance(SalutationResolver.class);
+
+    AtomicReference<CompletableFuture<String>> greetingFuture = new AtomicReference<>();
+    inRequestScope(() -> {
+      greetingFuture.set(resolver.sayHello("Bill"));
+      assertThat(greetingFuture.get().isDone()).isFalse();
+    });
+
+    inRequestScope(() -> {
+      CompletableFuture<String> otherGreetingFuture = resolver.sayHello("Anne");
+      assertThat(otherGreetingFuture.isDone()).isFalse();
+
+      dispatch();
+
+      assertThat(otherGreetingFuture.isDone()).isTrue();
+      assertThat(otherGreetingFuture.getNow(null)).isEqualTo("Hello Anne");
+
+    });
+
+    // shouldn't have dispatched this other future
+    assertThat(greetingFuture.get().isDone()).isFalse();
+  }
+
+  @Test
+  public void itCachesWithinARequest() {
+    RandomResolver resolver = injector.getInstance(RandomResolver.class);
+    String name = "test";
+
+    inRequestScope(() -> {
+      CompletableFuture<Long> randomFuture = resolver.getRandom(name);
+      assertThat(randomFuture.isDone()).isFalse();
+
+      dispatch();
+
+      assertThat(randomFuture.isDone()).isTrue();
+
+      long firstValue = randomFuture.getNow(null);
+
+      CompletableFuture<Long> secondFuture = resolver.getRandom(name);
+      // this assumes it checks the cache eagerly, might be an invalid assumption in the future
+      assertThat(secondFuture.isDone()).isTrue();
+
+      long secondValue = secondFuture.getNow(null);
+
+      assertThat(secondValue).isEqualTo(firstValue);
+    });
+  }
+
+  @Test
+  public void itDoesntCacheAcrossRequests() {
+    RandomResolver resolver = injector.getInstance(RandomResolver.class);
+    String name = "test";
+
+    AtomicLong firstValue = new AtomicLong();
+    inRequestScope(() -> {
+      CompletableFuture<Long> randomFuture = resolver.getRandom(name);
+      assertThat(randomFuture.isDone()).isFalse();
+
+      dispatch();
+
+      assertThat(randomFuture.isDone()).isTrue();
+      firstValue.set(randomFuture.getNow(null));
+    });
+
+    inRequestScope(() -> {
+      CompletableFuture<Long> secondFuture = resolver.getRandom(name);
+      assertThat(secondFuture.isDone()).isFalse();
+
+      dispatch();
+
+      assertThat(secondFuture.isDone()).isTrue();
+      long secondValue = secondFuture.getNow(null);
+      assertThat(secondValue).isNotEqualTo(firstValue.get());
+    });
+  }
+
+  private void dispatch() {
+    injector.getInstance(DataLoaderRegistry.class).dispatchAll();
+  }
+
+  private static class RandomResolver {
+    private final DataLoader<String, Long> randomDataLoader;
+
+    @Inject
+    public RandomResolver(@Named("random") DataLoader<String, Long> randomDataLoader) {
+      this.randomDataLoader = randomDataLoader;
+    }
+
+    public CompletableFuture<Long> getRandom(String name) {
+      return randomDataLoader.load(name);
+    }
   }
 
   private static class SalutationResolver {

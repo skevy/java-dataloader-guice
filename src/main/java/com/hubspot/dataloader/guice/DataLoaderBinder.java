@@ -1,6 +1,7 @@
 package com.hubspot.dataloader.guice;
 
 import java.lang.reflect.Type;
+import java.util.UUID;
 
 import org.dataloader.BatchLoader;
 import org.dataloader.DataLoader;
@@ -14,6 +15,7 @@ import com.google.inject.Injector;
 import com.google.inject.Key;
 import com.google.inject.Provider;
 import com.google.inject.Scopes;
+import com.google.inject.TypeLiteral;
 import com.google.inject.internal.MoreTypes.ParameterizedTypeImpl;
 import com.google.inject.multibindings.MapBinder;
 import com.google.inject.name.Names;
@@ -40,48 +42,70 @@ public class DataLoaderBinder {
       @Override
       @SuppressWarnings("unchecked")
       public DataLoaderBinder toBatchLoader(Class<? extends BatchLoader> loaderClass) {
-        Key<DataLoader<?, ?>> key = createKey(name, loaderClass, BatchLoader.class);
-        // bind the data loader directly so it's available for injection
-        binder.bind(key).toProvider(new Provider<DataLoader<?, ?>>() {
+        // generate a random name, request scoped version should only be used internally
+        Key<DataLoader<?, ?>> requestScopedKey = Key.get(
+            new TypeLiteral<DataLoader<?, ?>>() {},
+            Names.named(UUID.randomUUID().toString())
+        );
+
+        binder.bind(requestScopedKey).toProvider(new Provider<DataLoader<?, ?>>() {
 
           @Inject
           Injector injector;
 
           @Override
           public DataLoader<?, ?> get() {
-            // use a provider so that the DataLoader can be a singleton
-            Provider<BatchLoader> loaderProvider =
-                injector.getProvider((Class<BatchLoader>) loaderClass);
-            return DataLoader.newDataLoader(keys -> loaderProvider.get().load(keys));
+            return DataLoader.newDataLoader(injector.getInstance(loaderClass));
           }
-        }).in(Scopes.SINGLETON);
+        }).in(ServletScopes.REQUEST);
 
-        // also add to the map binder which we use to build the registry
-        mapBinder.addBinding(name).to(key).in(ServletScopes.REQUEST);
-        return DataLoaderBinder.this;
+        return addBindings(requestScopedKey, createKey(name, loaderClass, BatchLoader.class));
       }
 
       @Override
       @SuppressWarnings("unchecked")
       public DataLoaderBinder toMappedBatchLoader(Class<? extends MappedBatchLoader> loaderClass) {
-        Key<DataLoader<?, ?>> key = createKey(name, loaderClass, MappedBatchLoader.class);
-        // bind the data loader directly so it's available for injection
-        binder.bind(key).toProvider(new Provider<DataLoader<?, ?>>() {
+        // generate a random name, request scoped version should only be used internally
+        Key<DataLoader<?, ?>> requestScopedKey = Key.get(
+            new TypeLiteral<DataLoader<?, ?>>() {},
+            Names.named(UUID.randomUUID().toString())
+        );
+
+        binder.bind(requestScopedKey).toProvider(new Provider<DataLoader<?, ?>>() {
 
           @Inject
           Injector injector;
 
           @Override
           public DataLoader<?, ?> get() {
-            // use a provider so that the DataLoader can be a singleton
-            Provider<MappedBatchLoader> loaderProvider =
-                injector.getProvider((Class<MappedBatchLoader>) loaderClass);
-            return DataLoader.newMappedDataLoader(keys -> loaderProvider.get().load(keys));
+            return DataLoader.newMappedDataLoader(injector.getInstance(loaderClass));
+          }
+        }).in(ServletScopes.REQUEST);
+
+        return addBindings(requestScopedKey, createKey(name, loaderClass, MappedBatchLoader.class));
+      }
+
+      private DataLoaderBinder addBindings(
+          Key<DataLoader<?, ?>> requestScopedKey,
+          Key<DataLoader<?, ?>> singletonKey
+      ) {
+        // bind the data loader directly so it's available for injection
+        binder.bind(singletonKey).toProvider(new Provider<DataLoader<?, ?>>() {
+
+          @Inject
+          Injector injector;
+
+          @Override
+          public DataLoader<?, ?> get() {
+            Provider<DataLoader<?, ?>> loaderProvider = injector.getProvider(requestScopedKey);
+
+            // use a wrapper so the DataLoader binding can be a singleton
+            return DataLoaderWrapper.wrap(loaderProvider);
           }
         }).in(Scopes.SINGLETON);
 
         // also add to the map binder which we use to build the registry
-        mapBinder.addBinding(name).to(key).in(ServletScopes.REQUEST);
+        mapBinder.addBinding(name).to(requestScopedKey);
         return DataLoaderBinder.this;
       }
     };
