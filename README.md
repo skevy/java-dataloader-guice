@@ -79,7 +79,7 @@ This will create the appropriate `DataLoader` bindings and also add them to a `M
 <dependency>
   <groupId>com.hubspot.dataloader</groupId>
   <artifactId>java-dataloader-guice</artifactId>
-  <version>0.1</version>
+  <version>0.2</version>
 </dependency
 ```
 
